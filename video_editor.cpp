@@ -1,30 +1,33 @@
 #include "video_editor.h"
 
 namespace std {
-    uint8_t VideoEditor::UCalculation(array<uint8_t, 3> pixel){
+    // Расчет компоненты U для пикселя в формате YUV420
+    uint8_t VideoEditor::UCalculation(array<uint8_t, 3> pixel) {
         uint16_t result = -0.14713 * pixel[RGB::kR] -
-               0.28886 * pixel[RGB::kG] +
-               0.436 * pixel[RGB::kB] + 128;
+                          0.28886 * pixel[RGB::kG] +
+                          0.436 * pixel[RGB::kB] + 128;
         if (result > 255)
             result = 255;
         return result;
     }
 
-    uint8_t VideoEditor::VCalculation(array<uint8_t, 3> pixel){
+    // Расчет компоненты V для пикселя в формате YUV420
+    uint8_t VideoEditor::VCalculation(array<uint8_t, 3> pixel) {
         uint16_t result = 0.615 * pixel[RGB::kR] -
-               0.51499 * pixel[RGB::kG] -
-               0.10001 * pixel[RGB::kB] + 128;
+                          0.51499 * pixel[RGB::kG] -
+                          0.10001 * pixel[RGB::kB] + 128;
         if (result > 255)
             result = 255;
         return result;
     }
 
+    // Редактирование видео в формате YUV420
     void VideoEditor::EditVideo(const char *path, size_t width, size_t height) {
         ifstream video_file(path, ios::binary);
         if (!video_file.is_open()) {
             cerr << "Ошибка открытия файла исходного видео." << endl;
         }
-        std::ofstream save_file("/Users/aleksejrusskih/Nextcloud/Программирование/Тестовые задания/PictureIntoVideo/bus_edited.yuv", std::ios::binary);
+        std::ofstream save_file("../bus_edited.yuv", std::ios::binary);
         if (!save_file.is_open()) {
             cerr << "Ошибка открытия файла редактируемого видео." << endl;
         }
@@ -69,12 +72,14 @@ namespace std {
         video_file.close();
     }
 
-    void VideoEditor::PrepareFrame(BMPReader* bmp_reader){
+    // Подготовка кадра из BMP файла в формат YUV420
+    void VideoEditor::PrepareFrame(BMPReader *bmp_reader) {
         size_t size = bmp_reader->bmp_info_header.width * bmp_reader->bmp_info_header.height;
         y_frame_.resize(size);
         written_width_ = bmp_reader->bmp_info_header.width;
         for (size_t i = 0; i < bmp_reader->bmp_info_header.height; ++i) {
             for (size_t j = 0; j < written_width_; ++j) {
+                // Расчет компоненты Y для каждого пикселя
                 y_frame_[i * written_width_ + j] =
                         bmp_reader->converted_data[i][j][RGB::kR] * 0.299 +
                         0.587 * bmp_reader->converted_data[i][j][RGB::kG] +
@@ -82,8 +87,8 @@ namespace std {
             }
         }
 
-        for (size_t i = 0; i < bmp_reader->bmp_info_header.height; i+=2){
-            for (size_t j = 0; j < written_width_; j+=2) {
+        for (size_t i = 0; i < bmp_reader->bmp_info_header.height; i += 2) {
+            for (size_t j = 0; j < written_width_; j += 2) {
                 uint8_t count = 0;
                 uint16_t u_sum = UCalculation(bmp_reader->converted_data[i][j]);
                 count++;
@@ -99,6 +104,7 @@ namespace std {
                     u_sum += UCalculation(bmp_reader->converted_data[i + 1][j + 1]);
                     count++;
                 }
+                // Запись компоненты U
                 u_frame_.push_back(u_sum / count);
 
                 count = 0;
@@ -116,6 +122,7 @@ namespace std {
                     v_sum += VCalculation(bmp_reader->converted_data[i + 1][j + 1]);
                     count++;
                 }
+                // Запись компоненты V
                 v_frame_.push_back(v_sum / count);
             }
         }
