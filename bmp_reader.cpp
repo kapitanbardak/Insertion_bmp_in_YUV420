@@ -57,7 +57,21 @@ void BMPReader::Read(const char *fname) {
         throw std::runtime_error("Не удалось открыть файл изображения.");
     }
 
-    SetPixelsMatrix();
+    // Задаем параметры для первого потока
+    size_t start1 = 0;
+    size_t end1 = data_.size() / 2; // Половина данных
+
+    // Задаем параметры для второго потока
+    size_t start2 = end1;
+    size_t end2 = data_.size();
+
+    // Создаем два потока
+    std::thread thread1(&BMPReader::SetPixelsMatrix, this, start1, end1);
+    std::thread thread2(&BMPReader::SetPixelsMatrix, this, start2, end2);
+
+    // Ждем завершения работы потоков
+    thread1.join();
+    thread2.join();
 }
 
 // Добавляет 1 к row_stride до тех пор, пока он не будет делиться на align_stride
@@ -70,13 +84,15 @@ uint32_t BMPReader::MakeStrideAligned(uint32_t align_stride) {
 }
 
 // Устанавливает данные пикселей в матрицу пикселей
-void BMPReader::SetPixelsMatrix() {
-    for (size_t i = 0; i < data_.size(); i += 3) {
+void BMPReader::SetPixelsMatrix(size_t start, size_t end) {
+    for (size_t i = start; i < end; i += 3) {
         size_t row = bmp_info_header.height - 1 - i / 3 / bmp_info_header.width;
         size_t col = i / 3 % bmp_info_header.width;
 
+        mtx.lock(); // Захватываем мьютекс перед доступом к данным
         converted_data[row][col][0] = data_[i + 2]; // Красная компонента
         converted_data[row][col][1] = data_[i + 1]; // Зеленая компонента
         converted_data[row][col][2] = data_[i];     // Синяя компонента
+        mtx.unlock(); // Освобождаем мьютекс после доступа к данным
     }
 }

@@ -4,6 +4,7 @@
 #include <vector>
 #include <fstream>
 #include <iostream>
+#include <thread>
 
 #pragma pack(push, 1) // Устанавливаем выравнивание структур в 1 байт
 struct BMPFileHeader {
@@ -47,9 +48,9 @@ public:
 private:
     uint32_t row_stride{0};     // Ширина строки в байтах, с выравниванием
     std::vector<uint8_t> data_; // Буфер для данных изображения
-
+    std::mutex mtx;             // Мьютекс для синхронизации доступа к данным
     uint32_t MakeStrideAligned(uint32_t align_stride); // Метод для выравнивания ширины строки
-    void SetPixelsMatrix();     // Метод для установки данных изображения в матрицу пикселей
+    void SetPixelsMatrix(size_t start, size_t end);     // Метод для установки данных изображения в матрицу пикселей
 };
 
 #endif //PICTURETOVIDEO_BMP_READER_H

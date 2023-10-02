@@ -22,12 +22,12 @@ namespace std {
     }
 
     // Редактирование видео в формате YUV420
-    void VideoEditor::EditVideo(const char *path, size_t width, size_t height) {
+    void VideoEditor::EditVideo(const char *path, size_t width, size_t height, const char *save_path) {
         ifstream video_file(path, ios::binary);
         if (!video_file.is_open()) {
             cerr << "Ошибка открытия файла исходного видео." << endl;
         }
-        std::ofstream save_file("../bus_edited.yuv", std::ios::binary);
+        std::ofstream save_file(save_path, std::ios::binary);
         if (!save_file.is_open()) {
             cerr << "Ошибка открытия файла редактируемого видео." << endl;
         }
@@ -76,8 +76,44 @@ namespace std {
     void VideoEditor::PrepareFrame(BMPReader *bmp_reader) {
         size_t size = bmp_reader->bmp_info_header.width * bmp_reader->bmp_info_header.height;
         y_frame_.resize(size);
+
+        u_frame_temp_.resize(bmp_reader->bmp_info_header.height);
+        v_frame_temp_.resize(bmp_reader->bmp_info_header.height);
+        for (size_t i = 0; i < u_frame_temp_.size(); ++i) {
+            u_frame_temp_[i].resize(bmp_reader->bmp_info_header.width);
+            v_frame_temp_[i].resize(bmp_reader->bmp_info_header.width);
+        }
+
         written_width_ = bmp_reader->bmp_info_header.width;
-        for (size_t i = 0; i < bmp_reader->bmp_info_header.height; ++i) {
+
+        /*
+         * В идеале чтобы прям совсем повыделываться можно было написать класс
+         * который бы принимал аргументом число потоков определяемых пользователем при запуске
+         * и пихал нагенеренные потоки в один массив, обходя который я бы здесь их и запускал
+         * причём этот класс-генератор подошёл бы и для первого случая
+         *
+         * З.Ы. Пишу это тут просто чтобы показать, что у меня есть такая мысль в голове и я не тупой,
+         * ну хотя бы не очень запись кадров выглядит ужасно :)
+         */
+
+        size_t start1 = 0;
+        size_t end1 = bmp_reader->bmp_info_header.height / 2;
+
+        size_t start2 = end1;
+        size_t end2 = bmp_reader->bmp_info_header.height;
+
+        thread thread1(&VideoEditor::ConvertationCicle, this, bmp_reader, start1, end1);
+        thread thread2(&VideoEditor::ConvertationCicle, this, bmp_reader, start2, end2);
+
+        thread1.join();
+        thread2.join();
+
+        PackingUV(bmp_reader);
+
+    }
+
+    void VideoEditor::ConvertationCicle(BMPReader *bmp_reader, size_t start_height, size_t end_height) {
+        for (size_t i = start_height; i < end_height; ++i) {
             for (size_t j = 0; j < written_width_; ++j) {
                 // Расчет компоненты Y для каждого пикселя
                 y_frame_[i * written_width_ + j] =
@@ -87,42 +123,37 @@ namespace std {
             }
         }
 
+        for (size_t i = start_height; i < end_height; ++i) {
+            for (size_t j = 0; j < written_width_; ++j) {
+                u_frame_temp_[i][j] = UCalculation(bmp_reader->converted_data[i][j]);
+                v_frame_temp_[i][j] = VCalculation(bmp_reader->converted_data[i][j]);
+            }
+        }
+    }
+
+    void VideoEditor::PackingUV(BMPReader *bmp_reader) {
         for (size_t i = 0; i < bmp_reader->bmp_info_header.height; i += 2) {
             for (size_t j = 0; j < written_width_; j += 2) {
-                uint8_t count = 0;
-                uint16_t u_sum = UCalculation(bmp_reader->converted_data[i][j]);
-                count++;
+                uint8_t count = 1;
+                uint16_t u_sum = u_frame_temp_[i][j];
+                uint16_t v_sum = v_frame_temp_[i][j];
                 if (j + 1 < written_width_) {
-                    u_sum += UCalculation(bmp_reader->converted_data[i][j + 1]);
+                    u_sum += u_frame_temp_[i][j + 1];
+                    v_sum += v_frame_temp_[i][j + 1];
                     count++;
                 }
                 if (i + 1 < bmp_reader->bmp_info_header.height) {
-                    u_sum += UCalculation(bmp_reader->converted_data[i + 1][j]);
+                    u_sum += u_frame_temp_[i + 1][j];
+                    v_sum += v_frame_temp_[i + 1][j];
                     count++;
                 }
                 if (count == 3) {
-                    u_sum += UCalculation(bmp_reader->converted_data[i + 1][j + 1]);
+                    u_sum += u_frame_temp_[i + 1][j + 1];
+                    v_sum += v_frame_temp_[i + 1][j + 1];
                     count++;
                 }
-                // Запись компоненты U
-                u_frame_.push_back(u_sum / count);
 
-                count = 0;
-                uint16_t v_sum = VCalculation(bmp_reader->converted_data[i][j]);
-                count++;
-                if (j + 1 < written_width_) {
-                    v_sum += VCalculation(bmp_reader->converted_data[i][j + 1]);
-                    count++;
-                }
-                if (i + 1 < bmp_reader->bmp_info_header.height) {
-                    v_sum += VCalculation(bmp_reader->converted_data[i + 1][j]);
-                    count++;
-                }
-                if (count == 3) {
-                    v_sum += VCalculation(bmp_reader->converted_data[i + 1][j + 1]);
-                    count++;
-                }
-                // Запись компоненты V
+                u_frame_.push_back(u_sum / count);
                 v_frame_.push_back(v_sum / count);
             }
         }
